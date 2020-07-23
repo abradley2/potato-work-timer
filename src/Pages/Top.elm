@@ -10,8 +10,19 @@ import Process
 import Spa.Document exposing (Document)
 import Spa.Page as Page exposing (Page)
 import Spa.Url as Url exposing (Url)
+import String exposing (padLeft, padRight)
 import Task
-import Time exposing (Posix, now)
+import Time exposing (Posix, now, posixToMillis)
+
+
+primaryColor : El.Color
+primaryColor =
+    El.rgb255 0 209 178
+
+
+primaryLightColor : El.Color
+primaryLightColor =
+    El.rgb255 235 255 252
 
 
 edges =
@@ -43,13 +54,50 @@ type alias Params =
 type alias Model =
     { time : Posix
     , mode : Mode
+    , modeStart : Maybe Posix
     }
+
+
+displayTimeLeft : Posix -> Mode -> El.Element Msg
+displayTimeLeft startPosix mode =
+    case mode of
+        Pomodoro (OnGoing val) ->
+            timeView mode startPosix val
+
+        ShortBreak (OnGoing val) ->
+            timeView mode startPosix val
+
+        LongBreak (OnGoing val) ->
+            timeView mode startPosix val
+
+        _ ->
+            El.text ""
+
+
+timeView : Mode -> Posix -> Posix -> El.Element Msg
+timeView mode currentPosix startPosix =
+    modeDuration mode
+        - (posixToMillis currentPosix - posixToMillis startPosix)
+        |> (\v -> v // 1000)
+        |> (\v -> ( v // 60, remainderBy 60 v ))
+        |> Tuple.mapBoth
+            (String.fromInt >> padLeft 2 '0')
+            (String.fromInt >> padLeft 2 '0')
+        |> (\( minutes, seconds ) ->
+                El.el
+                    [ Font.color primaryColor
+                    , Font.semiBold
+                    , Font.size 40
+                    ]
+                    (El.text (minutes ++ ":" ++ seconds))
+           )
 
 
 init : Url Params -> ( Model, Cmd Msg )
 init { params } =
     ( { time = Time.millisToPosix 0
       , mode = Pomodoro Prologue
+      , modeStart = Nothing
       }
     , Task.perform
         GetTime
@@ -67,6 +115,19 @@ type Mode
     = Pomodoro ModeStatus
     | ShortBreak ModeStatus
     | LongBreak ModeStatus
+
+
+modeDuration : Mode -> Int
+modeDuration mode =
+    case mode of
+        Pomodoro _ ->
+            1000 * 60 * 25 + 900
+
+        ShortBreak _ ->
+            1000 * 60 * 5 + 900
+
+        LongBreak _ ->
+            1000 * 60 * 10 + 900
 
 
 
@@ -97,7 +158,7 @@ update msg model =
             )
 
         RequestModeSwitch timeToMode ->
-            ( model
+            ( { model | modeStart = Just model.time }
             , Task.perform
                 (timeToMode >> SwitchMode)
                 Time.now
@@ -111,7 +172,6 @@ subscriptions model =
 
 
 -- VIEW
--- (235, 255, 252);
 
 
 view : Model -> Document Msg
@@ -122,7 +182,13 @@ view model =
             [ El.centerY
             , El.width El.fill
             ]
-            [ El.wrappedRow
+            [ El.el
+                [ El.centerX
+                , El.centerY
+                , El.height (El.px 100)
+                ]
+                (displayTimeLeft model.time model.mode)
+            , El.wrappedRow
                 [ El.spacing 20
                 , El.centerX
                 , El.centerY
@@ -165,7 +231,7 @@ view model =
                     { onPress = Nothing, label = El.text "Long Break" }
                 ]
             , El.row
-                [ El.height (El.px 100)
+                [ El.height (El.px 200)
                 , El.width El.fill
                 ]
                 []
@@ -176,7 +242,7 @@ view model =
 
 activeButton : List (El.Attribute msg)
 activeButton =
-    [ Bg.color (El.rgb255 0 209 178)
+    [ Bg.color primaryColor
     , Font.color (El.rgb 255 255 255)
     , El.paddingXY 16 12
     , Bd.rounded 5
@@ -187,7 +253,7 @@ activeButton =
 
 passiveButton : El.Attribute msg -> List (El.Attribute msg)
 passiveButton onClick =
-    [ Bg.color (El.rgb255 235 255 252)
+    [ Bg.color primaryLightColor
     , Font.color (El.rgb 0 148 126)
     , El.paddingXY 16 12
     , Bd.rounded 5
